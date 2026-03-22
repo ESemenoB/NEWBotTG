@@ -295,17 +295,16 @@
 import 'dotenv/config';
 import { Telegraf, Markup, session } from 'telegraf';
 import connectDB from './db.js';
-import startCommand from './commands/start.js';
 import User from './models/User.js';
 import Message from './models/Message.js';
 
-const bot = new Telegraf(process.env.BOT_TOKEN);
-const ADMIN_ID = Number(process.env.ADMIN_ID);
+const BOT_TOKEN = process.env.BOT_TOKEN;
+const ADMIN_ID = process.env.ADMIN_ID;
 
-// подключаем сессию
+const bot = new Telegraf(BOT_TOKEN);
+
+// Подключаем сессию
 bot.use(session());
-
-// подстраховка: гарантируем ctx.session
 bot.use((ctx, next) => {
   if (!ctx.session) ctx.session = {};
   return next();
@@ -313,34 +312,37 @@ bot.use((ctx, next) => {
 
 async function startBot() {
   await connectDB();
-  console.log('MongoDB connected');
 
-  // =========================
+  console.log('🚀 Запуск бота...');
+
   // /start
-  // =========================
   bot.start(async (ctx) => {
-    await startCommand(ctx);
+    let user = await User.findOne({ telegramId: ctx.from.id });
+    if (!user) {
+      user = await User.create({
+        telegramId: ctx.from.id,
+        username: ctx.from.username
+      });
+    }
 
     const buttons = [
       ['👤 Профиль', '💰 Баланс'],
       ['⚙️ Настройки', 'ℹ️ Помощь']
     ];
 
-    if (ctx.from.id === ADMIN_ID) {
+    if (ctx.from.id.toString() === ADMIN_ID) {
       buttons.push(['📊 Статистика', '👥 Пользователи']);
     }
 
     await ctx.reply('Выберите действие:', Markup.keyboard(buttons).resize());
   });
 
-  // =========================
   // 👤 Профиль
-  // =========================
   bot.hears('👤 Профиль', async (ctx) => {
     const user = await User.findOne({ telegramId: ctx.from.id });
     if (!user) return ctx.reply('Нажми /start');
 
-    await ctx.reply(`
+    ctx.reply(`
 👤 Профиль
 ID: ${user.telegramId}
 Username: @${user.username || 'нет'}
@@ -348,44 +350,30 @@ Premium: ${user.isPremium ? 'Да ⭐' : 'Нет'}
 `);
   });
 
-  // =========================
   // 💰 Баланс
-  // =========================
   bot.hears('💰 Баланс', async (ctx) => {
     const user = await User.findOne({ telegramId: ctx.from.id });
     if (!user) return ctx.reply('Нажми /start');
-
-    await ctx.reply(`💰 Баланс: ${user.balance} ₽`);
+    ctx.reply(`💰 Баланс: ${user.balance} ₽`);
   });
 
-  // =========================
   // ⚙️ Настройки
-  // =========================
   bot.hears('⚙️ Настройки', (ctx) => ctx.reply('⚙️ Пока пусто'));
 
-  // =========================
   // ℹ️ Помощь
-  // =========================
   bot.hears('ℹ️ Помощь', (ctx) => ctx.reply('ℹ️ Это тестовый бот'));
 
-  // =========================
-  // 📊 Статистика (админ)
-  // =========================
+  // 📊 Статистика
   bot.hears('📊 Статистика', async (ctx) => {
-    if (ctx.from.id !== ADMIN_ID) return;
-
-    const usersCount = await User.countDocuments();
-    await ctx.reply(`📊 Пользователей: ${usersCount}`);
+    if (ctx.from.id.toString() !== ADMIN_ID) return;
+    const count = await User.countDocuments();
+    ctx.reply(`📊 Пользователей: ${count}`);
   });
 
-  // =========================
-  // 👥 Пользователи (админ)
-  // =========================
+  // 👥 Пользователи
   bot.hears('👥 Пользователи', async (ctx) => {
-    if (ctx.from.id !== ADMIN_ID) return;
-
-    const users = await User.find().sort({ _id: -1 }).limit(30);
-    if (!users.length) return ctx.reply('❌ Пользователей нет');
+    if (ctx.from.id.toString() !== ADMIN_ID) return;
+    const users = await User.find().limit(20);
 
     const buttons = users.map(u => [
       Markup.button.callback(
@@ -397,105 +385,62 @@ Premium: ${user.isPremium ? 'Да ⭐' : 'Нет'}
     await ctx.reply('👥 Пользователи:', Markup.inlineKeyboard(buttons));
   });
 
-  // =========================
-  // Открыть чат с пользователем (админ)
-  // =========================
+  // Открыть диалог
   bot.action(/user_(\d+)/, async (ctx) => {
-    if (ctx.from.id !== ADMIN_ID) return;
-
-    const userId = Number(ctx.match[1]);
+    if (ctx.from.id.toString() !== ADMIN_ID) return;
+    const userId = ctx.match[1];
     ctx.session.currentUserId = userId;
     await ctx.answerCbQuery();
+    await ctx.reply(`💬 Открыт диалог с ID: ${userId}`, Markup.keyboard([['❌ Закрыть диалог']]).resize());
 
-    await ctx.reply(
-      `💬 Открыт чат с ID: ${userId}`,
-      Markup.keyboard([['❌ Закрыть диалог']]).resize()
-    );
-
-    const messages = await Message.find({ userId }).sort({ date: -1 }).limit(15);
+    const messages = await Message.find({ userId }).sort({ date: -1 }).limit(10);
     for (const msg of messages.reverse()) {
-      try {
-        if (msg.type === 'text') await ctx.reply(msg.type === 'admin' ? `🛠 ${msg.content}` : `👤 ${msg.content}`);
-        if (msg.type === 'photo') await ctx.replyWithPhoto(msg.fileId, { caption: '🖼 Фото' });
-        if (msg.type === 'voice') await ctx.replyWithVoice(msg.fileId);
-        if (msg.type === 'document') await ctx.replyWithDocument(msg.fileId);
-      } catch (e) {
-        console.log('Ошибка вывода сообщения:', e);
-      }
+      await ctx.reply(`${msg.type === 'admin' ? '🛠 ' : '👤 '}${msg.content}`);
     }
   });
 
-  // =========================
   // ❌ Закрыть диалог
-  // =========================
   bot.hears('❌ Закрыть диалог', (ctx) => {
     ctx.session.currentUserId = null;
     ctx.reply('Диалог закрыт');
   });
 
-  // =========================
   // Основной обработчик сообщений
-  // =========================
-  bot.on(['text', 'photo', 'voice', 'document'], async (ctx) => {
-    const isAdmin = ctx.from.id === ADMIN_ID;
+  bot.on('text', async (ctx) => {
+    const isAdmin = ctx.from.id.toString() === ADMIN_ID;
 
-    // ⚠️ Ответ админа
+    // Админ отвечает пользователю
     if (isAdmin && ctx.session.currentUserId) {
-      const targetId = Number(ctx.session.currentUserId);
-      if (!targetId || isNaN(targetId)) return ctx.reply('❌ Не выбран пользователь для ответа');
-
-      try {
-        if (ctx.message.text) await bot.telegram.sendMessage(targetId, `💬 ${ctx.message.text}`);
-        if (ctx.message.photo) await bot.telegram.sendPhoto(targetId, ctx.message.photo[0].file_id, { caption: '💬 Фото' });
-        if (ctx.message.voice) await bot.telegram.sendVoice(targetId, ctx.message.voice.file_id);
-        if (ctx.message.document) await bot.telegram.sendDocument(targetId, ctx.message.document.file_id);
-
-        await Message.create({
-          userId: targetId,
-          type: 'admin',
-          content: ctx.message.text || 'media',
-          date: new Date()
-        });
-
-        return ctx.reply('✅ Ответ отправлен');
-      } catch (e) {
-        console.log(e);
-        return ctx.reply('❌ Ошибка отправки');
-      }
+      const targetId = ctx.session.currentUserId;
+      await bot.telegram.sendMessage(targetId, `💬 ${ctx.message.text}`);
+      await Message.create({
+        userId: targetId,
+        type: 'admin',
+        content: ctx.message.text,
+        date: new Date()
+      });
+      return;
     }
 
-    // ⚡ Сообщение пользователя
+    // Пользователь пишет
     const user = await User.findOne({ telegramId: ctx.from.id });
     if (!user) return;
 
-    try {
-      await Message.create({
-        userId: ctx.from.id,
-        type: ctx.message.photo ? 'photo' :
-              ctx.message.voice ? 'voice' :
-              ctx.message.document ? 'document' : 'text',
-        content: ctx.message.text || null,
-        fileId: ctx.message.photo?.[0]?.file_id || ctx.message.voice?.file_id || ctx.message.document?.file_id || null,
-        date: new Date(ctx.message.date * 1000)
-      });
-    } catch (e) {
-      console.log('Ошибка записи в БД:', e);
-    }
+    await Message.create({
+      userId: ctx.from.id,
+      type: 'text',
+      content: ctx.message.text || '',
+      date: new Date()
+    });
 
     if (!isAdmin) {
-      try {
-        await bot.telegram.sendMessage(
-          ADMIN_ID,
-          `📩 Сообщение от @${ctx.from.username || 'нет'}\nID: ${ctx.from.id}\n\n${ctx.message.text || '📎 медиа'}`
-        );
-      } catch (e) {
-        console.log('Ошибка отправки администратору:', e);
-      }
+      await bot.telegram.sendMessage(
+        ADMIN_ID,
+        `📩 Сообщение от @${ctx.from.username || 'нет'}\nID: ${ctx.from.id}\n\n${ctx.message.text || ''}`
+      );
     }
   });
 
-  // =========================
-  console.log('🚀 Запуск бота...');
   await bot.launch({ dropPendingUpdates: true });
   console.log('✅ Bot started');
 }
