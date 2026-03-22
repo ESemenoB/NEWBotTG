@@ -53,9 +53,13 @@ async function startBot() {
       ['⚙️ Настройки', 'ℹ️ Помощь']
     ]
 
-    if (ctx.from.id === ADMIN_ID) {
-      buttons.push(['📊 Статистика', '👥 Пользователи'])
-    }
+    // if (ctx.from.id === ADMIN_ID) {
+    //   buttons.push(['📊 Статистика', '👥 Пользователи'])
+    // }
+
+    if (ctx.from.id.toString() === ADMIN_ID) {
+  buttons.push(['📊 Статистика', '👥 Пользователи'])
+}
 
     await ctx.reply('Выберите действие:', Markup.keyboard(buttons).resize())
   })
