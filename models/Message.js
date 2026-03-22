@@ -13,10 +13,25 @@
 import mongoose from 'mongoose';
 
 const messageSchema = new mongoose.Schema({
-  userId: { type: String, required: true },
-  type: { type: String, enum: ['text', 'admin'], default: 'text' },
-  content: { type: String, default: '' },
-  date: { type: Date, default: Date.now }
-});
+  userId: {
+    type: Number,
+    required: true
+  },
+  type: {
+    type: String,
+    enum: ['text', 'admin'],
+    default: 'text'
+  },
+  content: {
+    type: String,
+    required: true
+  },
+  date: {
+    type: Date,
+    default: Date.now
+  }
+}, { timestamps: true });
 
-export default mongoose.model('Message', messageSchema);
+const Message = mongoose.model('Message', messageSchema);
+
+export default Message; // ✅ Default экспорт

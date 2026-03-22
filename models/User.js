@@ -19,10 +19,24 @@
 import mongoose from 'mongoose';
 
 const userSchema = new mongoose.Schema({
-  telegramId: { type: String, required: true, unique: true },
-  username: { type: String },
-  balance: { type: Number, default: 0 },
-  isPremium: { type: Boolean, default: false }
-});
+  telegramId: {
+    type: Number,
+    required: true,
+    unique: true
+  },
+  username: {
+    type: String
+  },
+  balance: {
+    type: Number,
+    default: 0
+  },
+  isPremium: {
+    type: Boolean,
+    default: false
+  }
+}, { timestamps: true });
 
-export default mongoose.model('User', userSchema);
+const User = mongoose.model('User', userSchema);
+
+export default User; // ✅ Default экспорт
