@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { Telegraf, Markup, session } from 'telegraf';
-import connectDB from './database/db.js';
+import {connectDB} from './database/db.js';
 console.log('BOT_TOKEN:', process.env.BOT_TOKEN);
 console.log('ADMIN_ID:', process.env.ADMIN_ID);
 console.log('MONGO_URI:', process.env.MONGO_URI); // <-- должно вывести твою строку
