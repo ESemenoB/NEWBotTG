@@ -283,6 +283,13 @@ bot.action(/user_(\d+)/, async (ctx) => {
   );
 });
 
+  bot.hears('📊 Статистика', async (ctx) => {
+    if (ctx.from.id.toString() !== ADMIN_ID) return;
+    const count = await User.countDocuments();
+    ctx.reply(`📊 Пользователей: ${count}`);
+  });
+
+
 // ❌ Закрыть диалог
 bot.hears('❌ Закрыть диалог', async (ctx) => {
   ctx.session.currentUserId = null;
