@@ -1,10 +1,6 @@
 // import 'dotenv/config';
 // import { Telegraf, Markup, session } from 'telegraf';
 // import connectDB from './database/db.js';
-// console.log('BOT_TOKEN:', process.env.BOT_TOKEN);
-// console.log('ADMIN_ID:', process.env.ADMIN_ID);
-// console.log('MONGO_URI:', process.env.MONGO_URI); // <-- должно вывести твою строку
-
 // import User from './models/User.js';
 // import Message from './models/Message.js';
 
@@ -13,8 +9,8 @@
 
 // const bot = new Telegraf(BOT_TOKEN);
 
-
 // await connectDB();
+
 // // Подключаем сессию
 // bot.use(session());
 // bot.use((ctx, next) => {
@@ -22,9 +18,24 @@
 //   return next();
 // });
 
-// async function startBot() {
-//   await connectDB();
+// // Функция для генерации основной клавиатуры
+// function mainKeyboard(ctx) {
+//   const buttons = [
+//     ['👤 Профиль', '💰 Баланс'],
+//     ['⚙️ Настройки', 'ℹ️ Помощь']
+//   ];
+//   if (ctx.from.id.toString() === ADMIN_ID) {
+//     buttons.push(['📊 Статистика', '👥 Пользователи']);
+//   }
+//   return Markup.keyboard(buttons).resize();
+// }
 
+// // Функция для клавиатуры диалога
+// function dialogKeyboard() {
+//   return Markup.keyboard([['❌ Закрыть диалог']]).resize();
+// }
+
+// async function startBot() {
 //   console.log('🚀 Запуск бота...');
 
 //   // /start
@@ -36,24 +47,13 @@
 //         username: ctx.from.username
 //       });
 //     }
-
-//     const buttons = [
-//       ['👤 Профиль', '💰 Баланс'],
-//       ['⚙️ Настройки', 'ℹ️ Помощь']
-//     ];
-
-//     if (ctx.from.id.toString() === ADMIN_ID) {
-//       buttons.push(['📊 Статистика', '👥 Пользователи']);
-//     }
-
-//     await ctx.reply('Выберите действие:', Markup.keyboard(buttons).resize());
+//     await ctx.reply('Выберите действие:', mainKeyboard(ctx));
 //   });
 
 //   // 👤 Профиль
 //   bot.hears('👤 Профиль', async (ctx) => {
 //     const user = await User.findOne({ telegramId: ctx.from.id });
 //     if (!user) return ctx.reply('Нажми /start');
-
 //     ctx.reply(`
 // 👤 Профиль
 // ID: ${user.telegramId}
@@ -93,17 +93,17 @@
 //         `user_${u.telegramId}`
 //       )
 //     ]);
-
 //     await ctx.reply('👥 Пользователи:', Markup.inlineKeyboard(buttons));
 //   });
 
 //   // Открыть диалог
 //   bot.action(/user_(\d+)/, async (ctx) => {
 //     if (ctx.from.id.toString() !== ADMIN_ID) return;
+
 //     const userId = ctx.match[1];
 //     ctx.session.currentUserId = userId;
 //     await ctx.answerCbQuery();
-//     await ctx.reply(`💬 Открыт диалог с ID: ${userId}`, Markup.keyboard([['❌ Закрыть диалог']]).resize());
+//     await ctx.reply(`💬 Открыт диалог с ID: ${userId}`, dialogKeyboard());
 
 //     const messages = await Message.find({ userId }).sort({ date: -1 }).limit(10);
 //     for (const msg of messages.reverse()) {
@@ -114,7 +114,7 @@
 //   // ❌ Закрыть диалог
 //   bot.hears('❌ Закрыть диалог', (ctx) => {
 //     ctx.session.currentUserId = null;
-//     ctx.reply('Диалог закрыт');
+//     ctx.reply('Диалог закрыт', mainKeyboard(ctx));
 //   });
 
 //   // Основной обработчик сообщений
@@ -151,6 +151,11 @@
 //         `📩 Сообщение от @${ctx.from.username || 'нет'}\nID: ${ctx.from.id}\n\n${ctx.message.text || ''}`
 //       );
 //     }
+
+//     // Автоматическое восстановление клавиатуры для пользователя
+//     if (!isAdmin) {
+//       await ctx.reply('Выберите действие:', mainKeyboard(ctx));
+//     }
 //   });
 
 //   await bot.launch({ dropPendingUpdates: true });
@@ -179,7 +184,7 @@ bot.use((ctx, next) => {
   return next();
 });
 
-// Функция для генерации основной клавиатуры
+// Функция для основной клавиатуры
 function mainKeyboard(ctx) {
   const buttons = [
     ['👤 Профиль', '💰 Баланс'],
@@ -191,15 +196,24 @@ function mainKeyboard(ctx) {
   return Markup.keyboard(buttons).resize();
 }
 
-// Функция для клавиатуры диалога
+// Клавиатура диалога
 function dialogKeyboard() {
   return Markup.keyboard([['❌ Закрыть диалог']]).resize();
+}
+
+// Получить количество непрочитанных сообщений от пользователя
+async function getUnreadCount(userId) {
+  return await Message.countDocuments({ userId, type: 'text', readByAdmin: { $ne: true } });
+}
+
+// Отметить сообщения как прочитанные админом
+async function markMessagesRead(userId) {
+  await Message.updateMany({ userId, type: 'text', readByAdmin: { $ne: true } }, { readByAdmin: true });
 }
 
 async function startBot() {
   console.log('🚀 Запуск бота...');
 
-  // /start
   bot.start(async (ctx) => {
     let user = await User.findOne({ telegramId: ctx.from.id });
     if (!user) {
@@ -211,7 +225,7 @@ async function startBot() {
     await ctx.reply('Выберите действие:', mainKeyboard(ctx));
   });
 
-  // 👤 Профиль
+  // Пользовательский профиль
   bot.hears('👤 Профиль', async (ctx) => {
     const user = await User.findOne({ telegramId: ctx.from.id });
     if (!user) return ctx.reply('Нажми /start');
@@ -230,10 +244,7 @@ Premium: ${user.isPremium ? 'Да ⭐' : 'Нет'}
     ctx.reply(`💰 Баланс: ${user.balance} ₽`);
   });
 
-  // ⚙️ Настройки
   bot.hears('⚙️ Настройки', (ctx) => ctx.reply('⚙️ Пока пусто'));
-
-  // ℹ️ Помощь
   bot.hears('ℹ️ Помощь', (ctx) => ctx.reply('ℹ️ Это тестовый бот'));
 
   // 📊 Статистика
@@ -246,14 +257,16 @@ Premium: ${user.isPremium ? 'Да ⭐' : 'Нет'}
   // 👥 Пользователи
   bot.hears('👥 Пользователи', async (ctx) => {
     if (ctx.from.id.toString() !== ADMIN_ID) return;
+
     const users = await User.find().limit(20);
 
-    const buttons = users.map(u => [
-      Markup.button.callback(
+    const buttons = users.map(u => {
+      return [Markup.button.callback(
         `${u.username ? '@' + u.username : 'без username'} | ${u.telegramId}`,
         `user_${u.telegramId}`
-      )
-    ]);
+      )];
+    });
+
     await ctx.reply('👥 Пользователи:', Markup.inlineKeyboard(buttons));
   });
 
@@ -266,10 +279,14 @@ Premium: ${user.isPremium ? 'Да ⭐' : 'Нет'}
     await ctx.answerCbQuery();
     await ctx.reply(`💬 Открыт диалог с ID: ${userId}`, dialogKeyboard());
 
+    // Получаем последние 10 сообщений
     const messages = await Message.find({ userId }).sort({ date: -1 }).limit(10);
     for (const msg of messages.reverse()) {
       await ctx.reply(`${msg.type === 'admin' ? '🛠 ' : '👤 '}${msg.content}`);
     }
+
+    // Отмечаем сообщения как прочитанные
+    await markMessagesRead(userId);
   });
 
   // ❌ Закрыть диалог
@@ -299,21 +316,24 @@ Premium: ${user.isPremium ? 'Да ⭐' : 'Нет'}
     const user = await User.findOne({ telegramId: ctx.from.id });
     if (!user) return;
 
-    await Message.create({
+    const newMsg = await Message.create({
       userId: ctx.from.id,
       type: 'text',
       content: ctx.message.text || '',
-      date: new Date()
+      date: new Date(),
+      readByAdmin: false
     });
 
+    // Отправка уведомления админу
     if (!isAdmin) {
+      const unreadCount = await getUnreadCount(ctx.from.id);
       await bot.telegram.sendMessage(
         ADMIN_ID,
-        `📩 Сообщение от @${ctx.from.username || 'нет'}\nID: ${ctx.from.id}\n\n${ctx.message.text || ''}`
+        `📩 Новое сообщение от @${ctx.from.username || 'нет'} | ID: ${ctx.from.id}\nСообщений: ${unreadCount}\n\n${ctx.message.text || ''}`
       );
     }
 
-    // Автоматическое восстановление клавиатуры для пользователя
+    // Восстанавливаем клавиатуру для пользователя
     if (!isAdmin) {
       await ctx.reply('Выберите действие:', mainKeyboard(ctx));
     }
