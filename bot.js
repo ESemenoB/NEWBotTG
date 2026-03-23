@@ -335,21 +335,40 @@ bot.action(/user_(\d+)/, async (ctx) => {
   await ctx.reply('Вы находитесь в диалоге с пользователем', Markup.keyboard([['❌ Закрыть диалог']]).resize());
 });
 
+// // ❌ Закрыть диалог
+// bot.hears('❌ Закрыть диалог', async (ctx) => {
+//   ctx.session.currentUserId = null;
+
+//   const buttons = [
+//     ['👤 Профиль', '💰 Баланс'],
+//     ['⚙️ Настройки', 'ℹ️ Помощь']
+//   ];
+//   if (ctx.from.id.toString() === ADMIN_ID) {
+//     buttons.push(['📥 Входящие']);
+//     const keyboard = await updateAdminKeyboard();
+//     await ctx.reply('Диалог закрыт', keyboard);
+//   } else {
+//     await ctx.reply('Диалог закрыт', Markup.keyboard(buttons).resize());
+//   }
+// });
+
 // ❌ Закрыть диалог
 bot.hears('❌ Закрыть диалог', async (ctx) => {
   ctx.session.currentUserId = null;
 
-  const buttons = [
+  const baseButtons = [
     ['👤 Профиль', '💰 Баланс'],
     ['⚙️ Настройки', 'ℹ️ Помощь']
   ];
+
   if (ctx.from.id.toString() === ADMIN_ID) {
-    buttons.push(['📥 Входящие']);
-    const keyboard = await updateAdminKeyboard();
-    await ctx.reply('Диалог закрыт', keyboard);
-  } else {
-    await ctx.reply('Диалог закрыт', Markup.keyboard(buttons).resize());
+    // Проверяем наличие непрочитанных сообщений
+    const usersWithUnread = await Message.distinct('userId', { type: 'text', read: false });
+    const inboxButton = ['📥 Входящие' + (usersWithUnread.length ? ' 🔴' : '')];
+    baseButtons.push(inboxButton);
   }
+
+  await ctx.reply('Диалог закрыт', Markup.keyboard(baseButtons).resize());
 });
 
 // Основной обработчик сообщений
