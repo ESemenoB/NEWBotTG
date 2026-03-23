@@ -236,11 +236,11 @@ async function updateInboxButton(ctx) {
   // Формируем кнопки в столбик
   const buttons = users.map(u => {
     const unread = usersWithUnread.find(x => x._id === u.telegramId);
-    const label = `${u.username || u.firstName || 'User ' + u.telegramId} 🔴 (${unread.count})`;
+    const label = `${u.username || u.firstName || 'User ' + u.telegramId}${unread ? ` 🔴 (${unread.count})` : ''}`;
     return [Markup.button.callback(label, `user_${u.telegramId}`)]; // столбик
   });
 
-  await bot.telegram.sendMessage(chatId, '📥 Входящие\n(нажми на пользователя)', 
+  await bot.telegram.sendMessage(chatId, '📥 Входящие\n(нажми на пользователя)',
     Markup.inlineKeyboard(buttons)
   );
 }
