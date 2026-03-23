@@ -1,3 +1,4 @@
+
 // import 'dotenv/config';
 // import { Telegraf, Markup, session } from 'telegraf';
 // import connectDB from './database/db.js';
@@ -18,45 +19,33 @@
 // });
 
 
+// // ------------------ Функция обновления входящих ------------------
 // async function updateInboxButton(ctx) {
 //   const chatId = ADMIN_ID;
 
+//   // Находим пользователей с непрочитанными сообщениями
 //   const usersWithUnread = await Message.aggregate([
 //     { $match: { type: 'text', readByAdmin: { $ne: true } } },
 //     { $group: { _id: '$userId', count: { $sum: 1 } } }
 //   ]);
 
+//   // Получаем пользователей, чтобы показать в кнопках
 //   const users = await User.find().limit(20);
 
-//   // Кнопки в столбик
+//   // Формируем кнопки в столбик
 //   const buttons = users.map(u => {
 //     const unread = usersWithUnread.find(x => x._id === u.telegramId);
-//     const label = `${u.username || u.firstName || 'User ' + u.telegramId}${unread ? ` 🔴 (${unread.count})` : ''}`;
-//     return [Markup.button.callback(label, `user_${u.telegramId}`)]; // <-- каждая кнопка в отдельном массиве = столбик
+//     const unreadCount = unread ? unread.count : 0;
+//     const label = `${u.username || u.firstName || 'User ' + u.telegramId}${unreadCount > 0 ? ` 🔴 (${unreadCount})` : ''}`;
+//     return [Markup.button.callback(label, `user_${u.telegramId}`)]; // столбик
 //   });
 
-//   if (ctx?.session?.inboxMessageId) {
-//     try {
-//       await bot.telegram.editMessageReplyMarkup(
-//         chatId,
-//         ctx.session.inboxMessageId,
-//         undefined,
-//         { inline_keyboard: buttons }
-//       );
-//     } catch {
-//       // если нельзя редактировать, игнорируем
-//     }
-//   } else {
-//     const sent = await bot.telegram.sendMessage(
-//       chatId,
-//       '📥 Входящие\n(нажми на пользователя)',
-//       { reply_markup: { inline_keyboard: buttons } }
-//     );
-//     if (ctx?.session) ctx.session.inboxMessageId = sent.message_id;
-//   }
+//   await bot.telegram.sendMessage(chatId, '📥 Входящие\n(нажми на пользователя)',
+//     Markup.inlineKeyboard(buttons)
+//   );
 // }
 
-// // /start
+// // ------------------ /start ------------------
 // bot.start(async (ctx) => {
 //   let user = await User.findOne({ telegramId: ctx.from.id });
 //   if (!user) {
@@ -72,14 +61,12 @@
 //     ['⚙️ Настройки', 'ℹ️ Помощь']
 //   ];
 
-//   if (ctx.from.id === ADMIN_ID) {
-//     buttons.push(['📥 Входящие']);
-//   }
+//   if (ctx.from.id === ADMIN_ID) buttons.push(['📥 Входящие']);
 
 //   await ctx.reply('Выберите действие:', Markup.keyboard(buttons).resize());
 // });
 
-// // Кнопки обычного пользователя
+// // ------------------ Кнопки пользователя ------------------
 // bot.hears('👤 Профиль', async (ctx) => {
 //   const user = await User.findOne({ telegramId: ctx.from.id });
 //   if (!user) return ctx.reply('Нажми /start');
@@ -101,20 +88,20 @@
 // bot.hears('⚙️ Настройки', (ctx) => ctx.reply('⚙️ Пока пусто'));
 // bot.hears('ℹ️ Помощь', (ctx) => ctx.reply('ℹ️ Это тестовый бот'));
 
-// // Админский функционал
+// // ------------------ Админский функционал ------------------
 // bot.hears('📥 Входящие', async (ctx) => {
 //   if (ctx.from.id !== ADMIN_ID) return;
 //   await updateInboxButton(ctx);
 // });
 
-// // Открыть диалог с пользователем
+// // ------------------ Открыть диалог с пользователем ------------------
 // bot.action(/user_(\d+)/, async (ctx) => {
 //   if (ctx.from.id !== ADMIN_ID) return;
 
 //   const userId = parseInt(ctx.match[1]);
 //   ctx.session.currentUserId = userId;
 
-//   // Отметить сообщения прочитанными
+//   // Отмечаем сообщения прочитанными
 //   await Message.updateMany(
 //     { userId, type: 'text', readByAdmin: { $ne: true } },
 //     { $set: { readByAdmin: true } }
@@ -122,9 +109,7 @@
 
 //   const user = await User.findOne({ telegramId: userId });
 
-//   // Получаем последние 10 сообщений
 //   const messages = await Message.find({ userId }).sort({ date: -1 }).limit(10);
-
 //   let text = `💬 Диалог с ${user.username || user.firstName || 'User ' + userId}:\n\n`;
 //   text += messages.reverse().map(m => `${m.type === 'admin' ? '🛠 ' : '👤 '}${m.content}`).join('\n');
 
@@ -137,7 +122,7 @@
 //   await updateInboxButton(ctx);
 // });
 
-// // Завершить диалог
+// // ------------------ Завершить диалог ------------------
 // bot.hears('❌ Завершить диалог', async (ctx) => {
 //   ctx.session.currentUserId = null;
 
@@ -151,14 +136,12 @@
 //   await updateInboxButton(ctx);
 // });
 
-// // Основной обработчик сообщений
+// // ------------------ Основной обработчик сообщений ------------------
 // bot.on('text', async (ctx) => {
 //   const isAdmin = ctx.from.id === ADMIN_ID;
 
 //   if (isAdmin && ctx.session.currentUserId) {
-//     // Админ отвечает пользователю
 //     const targetId = ctx.session.currentUserId;
-
 //     await bot.telegram.sendMessage(targetId, `💬 ${ctx.message.text}`);
 //     await Message.create({
 //       userId: targetId,
@@ -166,12 +149,10 @@
 //       content: ctx.message.text,
 //       date: new Date()
 //     });
-
 //     await updateInboxButton(ctx);
 //     return;
 //   }
 
-//   // Пользователь пишет
 //   const user = await User.findOne({ telegramId: ctx.from.id });
 //   if (!user) return;
 
@@ -189,7 +170,7 @@
 //       ADMIN_ID,
 //       `📩 Новое сообщение от ${user.username || user.firstName || 'User ' + ctx.from.id}\nID: ${ctx.from.id}\n\n${ctx.message.text}`
 //     );
-//     await updateInboxButton();
+//     await updateInboxButton(ctx);
 //   }
 // });
 
@@ -215,21 +196,18 @@ bot.use((ctx, next) => {
   return next();
 });
 
-
 // ------------------ Функция обновления входящих ------------------
 async function updateInboxButton(ctx) {
   const chatId = ADMIN_ID;
 
-  // Находим пользователей с непрочитанными сообщениями
   const usersWithUnread = await Message.aggregate([
     { $match: { type: 'text', readByAdmin: { $ne: true } } },
     { $group: { _id: '$userId', count: { $sum: 1 } } }
   ]);
 
-  // Получаем пользователей, чтобы показать в кнопках
   const users = await User.find().limit(20);
 
-  // Формируем кнопки в столбик
+  // Кнопки в столбик
   const buttons = users.map(u => {
     const unread = usersWithUnread.find(x => x._id === u.telegramId);
     const unreadCount = unread ? unread.count : 0;
@@ -237,9 +215,27 @@ async function updateInboxButton(ctx) {
     return [Markup.button.callback(label, `user_${u.telegramId}`)]; // столбик
   });
 
-  await bot.telegram.sendMessage(chatId, '📥 Входящие\n(нажми на пользователя)',
-    Markup.inlineKeyboard(buttons)
-  );
+  // Если уже есть сообщение с кнопками, редактируем
+  try {
+    if (ctx?.session?.inboxMessageId) {
+      await bot.telegram.editMessageReplyMarkup(
+        chatId,
+        ctx.session.inboxMessageId,
+        undefined,
+        Markup.inlineKeyboard(buttons)
+      );
+    } else {
+      const sent = await bot.telegram.sendMessage(
+        chatId,
+        '📥 Входящие\n(нажми на пользователя)',
+        Markup.inlineKeyboard(buttons)
+      );
+      if (ctx?.session) ctx.session.inboxMessageId = sent.message_id;
+    }
+  } catch (err) {
+    // Игнорируем ошибки редактирования
+    console.log('updateInboxButton error:', err.description || err.message);
+  }
 }
 
 // ------------------ /start ------------------
@@ -316,7 +312,7 @@ bot.action(/user_(\d+)/, async (ctx) => {
     Markup.keyboard([['❌ Завершить диалог']]).resize()
   );
 
-  await updateInboxButton(ctx);
+  await updateInboxButton(ctx); // обновляем маркеры после просмотра
 });
 
 // ------------------ Завершить диалог ------------------
@@ -330,7 +326,7 @@ bot.hears('❌ Завершить диалог', async (ctx) => {
   buttons.push(['📥 Входящие']);
 
   await ctx.reply('Выберите действие:', Markup.keyboard(buttons).resize());
-  await updateInboxButton(ctx);
+  await updateInboxButton(ctx); // обновляем список входящих
 });
 
 // ------------------ Основной обработчик сообщений ------------------
@@ -361,7 +357,6 @@ bot.on('text', async (ctx) => {
     readByAdmin: false
   });
 
-  // Уведомление админа
   if (!isAdmin) {
     await bot.telegram.sendMessage(
       ADMIN_ID,
