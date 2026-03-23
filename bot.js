@@ -216,6 +216,8 @@ bot.use((ctx, next) => {
 });
 
 // ------------------ Функция обновления входящих ------------------
+
+// ------------------ Функция обновления входящих ------------------
 async function updateInboxButton(ctx) {
   const chatId = ADMIN_ID;
 
@@ -225,18 +227,14 @@ async function updateInboxButton(ctx) {
     { $group: { _id: '$userId', count: { $sum: 1 } } }
   ]);
 
-  if (usersWithUnread.length === 0) {
-    await bot.telegram.sendMessage(chatId, '📥 Входящие пусты');
-    return;
-  }
-
-  // Получаем данные пользователей
-  const users = await User.find({ telegramId: { $in: usersWithUnread.map(u => u._id) } });
+  // Получаем пользователей, чтобы показать в кнопках
+  const users = await User.find().limit(20);
 
   // Формируем кнопки в столбик
   const buttons = users.map(u => {
     const unread = usersWithUnread.find(x => x._id === u.telegramId);
-    const label = `${u.username || u.firstName || 'User ' + u.telegramId}${unread ? ` 🔴 (${unread.count})` : ''}`;
+    const unreadCount = unread ? unread.count : 0;
+    const label = `${u.username || u.firstName || 'User ' + u.telegramId}${unreadCount > 0 ? ` 🔴 (${unreadCount})` : ''}`;
     return [Markup.button.callback(label, `user_${u.telegramId}`)]; // столбик
   });
 
