@@ -9,158 +9,128 @@ const ADMIN_ID = process.env.ADMIN_ID;
 
 const bot = new Telegraf(BOT_TOKEN);
 
-// Подключение к БД
 await connectDB();
 
-// Сессии
+// Подключаем сессию
 bot.use(session());
 bot.use((ctx, next) => {
   if (!ctx.session) ctx.session = {};
   return next();
 });
 
-// Получение клавиатуры выбора пользователя для админа
-async function getAdminUsersKeyboard() {
-  const users = await User.find().limit(50);
-  const buttons = await Promise.all(
-    users.map(async (u) => {
-      const unread = await Message.countDocuments({ userId: u.telegramId, read: false, type: 'text' });
-      const label = `${u.username ? '@' + u.username : 'без username'}${unread ? ` 🔴(${unread})` : ''}`;
-      return [Markup.button.callback(label, `user_${u.telegramId}`)];
-    })
-  );
-  return Markup.inlineKeyboard(buttons);
+// Функция для обновления кнопки "Входящие" с индикатором непрочитанных
+async function updateInboxButton(ctx) {
+  const unreadCounts = await Message.aggregate([
+    { $match: { type: 'text', readByAdmin: { $ne: true } } },
+    { $group: { _id: '$userId', count: { $sum: 1 } } }
+  ]);
+  const totalUnread = unreadCounts.reduce((acc, u) => acc + u.count, 0);
+  const hasUnread = totalUnread > 0;
+
+  // Обновляем клавиатуру главного меню админа
+  const buttons = [
+    [`👤 Профиль`, `💰 Баланс`],
+    [`⚙️ Настройки`, `ℹ️ Помощь`],
+    [`📥 Входящие${hasUnread ? ` 🔴 (${totalUnread})` : ''}`]
+  ];
+
+  await ctx.editMessageReplyMarkup(Markup.keyboard(buttons).resize());
 }
 
-// Клавиатура главного меню для админа
-async function getAdminMainKeyboard() {
-  const hasUnread = await Message.exists({ read: false, type: 'text' });
-  return Markup.keyboard([
+// Главная клавиатура для всех
+function getMainKeyboard(isAdmin) {
+  const buttons = [
     ['👤 Профиль', '💰 Баланс'],
-    ['⚙️ Настройки', 'ℹ️ Помощь'],
-    [hasUnread ? `📥 Входящие 🔴` : '📥 Входящие']
-  ]).resize();
+    ['⚙️ Настройки', 'ℹ️ Помощь']
+  ];
+  if (isAdmin) buttons.push(['📥 Входящие 🔴']);
+  return Markup.keyboard(buttons).resize();
 }
 
-// Старт
+// /start
 bot.start(async (ctx) => {
-  let user = await User.findOne({ telegramId: ctx.from.id });
+  const user = await User.findOne({ telegramId: ctx.from.id });
   if (!user) {
-    user = await User.create({
-      telegramId: ctx.from.id,
-      username: ctx.from.username
-    });
+    await User.create({ telegramId: ctx.from.id, username: ctx.from.username });
   }
 
-  if (ctx.from.id.toString() === ADMIN_ID) {
-    await ctx.reply('Выберите действие:', await getAdminMainKeyboard());
-  } else {
-    await ctx.reply('Выберите действие:', Markup.keyboard([
-      ['👤 Профиль', '💰 Баланс'],
-      ['⚙️ Настройки', 'ℹ️ Помощь']
-    ]).resize());
-  }
+  const isAdmin = ctx.from.id.toString() === ADMIN_ID;
+  await ctx.reply('Выберите действие:', getMainKeyboard(isAdmin));
 });
 
-// Админ нажимает "Входящие"
+// Основной обработчик админа для входящих
 bot.hears(/📥 Входящие/, async (ctx) => {
   if (ctx.from.id.toString() !== ADMIN_ID) return;
-  ctx.session.currentUserId = null;
+  const usersWithUnread = await Message.aggregate([
+    { $match: { type: 'text', readByAdmin: { $ne: true } } },
+    { $group: { _id: '$userId', count: { $sum: 1 } } }
+  ]);
 
-  const keyboard = await getAdminUsersKeyboard();
-  await ctx.reply('Выберите пользователя:', keyboard);
+  if (!usersWithUnread.length) {
+    await ctx.reply('📭 Нет новых сообщений', getMainKeyboard(true));
+    return;
+  }
+
+  const users = await User.find({ telegramId: { $in: usersWithUnread.map(u => u._id) } });
+  const buttons = users.map(u => {
+    const unread = usersWithUnread.find(x => x._id === u.telegramId)?.count || 0;
+    return [Markup.button.callback(`${u.username || 'без username'} (${u.telegramId}) ${unread ? `🔴 ${unread}` : ''}`, `user_${u.telegramId}`)];
+  });
+
+  await ctx.reply('📩 Выберите пользователя:', Markup.inlineKeyboard(buttons));
 });
 
 // Открыть диалог с пользователем
 bot.action(/user_(\d+)/, async (ctx) => {
   if (ctx.from.id.toString() !== ADMIN_ID) return;
-
-  const userId = ctx.match[1];
+  const userId = parseInt(ctx.match[1]);
   ctx.session.currentUserId = userId;
 
-  // Пометить все сообщения этого пользователя как прочитанные
-  await Message.updateMany({ userId, read: false, type: 'text' }, { read: true });
+  // Отмечаем все сообщения как прочитанные
+  await Message.updateMany({ userId, type: 'text', readByAdmin: { $ne: true } }, { $set: { readByAdmin: true } });
 
-  const messages = await Message.find({ userId }).sort({ date: 1 }).limit(50);
+  const messages = await Message.find({ userId }).sort({ date: -1 }).limit(20);
   if (!messages.length) {
-    await ctx.reply('📭 Сообщений нет');
-  } else {
-    for (const msg of messages) {
-      const text = msg.content?.trim() || '(пустое сообщение)';
-      await ctx.reply(`${msg.type === 'admin' ? '🛠 ' : '👤 '}${text}`);
-    }
-  }
-
-  await ctx.reply('❌ Завершить диалог');
-  await ctx.answerCbQuery();
-});
-
-// Завершить диалог
-bot.hears('❌ Завершить диалог', async (ctx) => {
-  ctx.session.currentUserId = null;
-  await ctx.reply('Диалог закрыт. Вернулись в главное меню:', await getAdminMainKeyboard());
-});
-
-// Обработка сообщений
-bot.on('text', async (ctx) => {
-  const isAdmin = ctx.from.id.toString() === ADMIN_ID;
-
-  // Админ пишет в открытый диалог
-  if (isAdmin && ctx.session.currentUserId) {
-    const targetId = ctx.session.currentUserId;
-    const textContent = ctx.message.text?.trim();
-    if (textContent) {
-      await bot.telegram.sendMessage(targetId, `💬 ${textContent}`);
-      await Message.create({
-        userId: targetId,
-        type: 'admin',
-        content: textContent,
-        date: new Date()
-      });
-    }
-
-    const keyboard = await getAdminUsersKeyboard();
-    await ctx.reply('Выберите пользователя:', keyboard);
+    await ctx.reply('Сообщений нет', getMainKeyboard(true));
     return;
   }
 
-  // Пользователь пишет
-  const user = await User.findOne({ telegramId: ctx.from.id });
-  if (!user) return;
-
-  const textContent = ctx.message.text?.trim() || '(пустое сообщение)';
-  await Message.create({
-    userId: ctx.from.id,
-    type: 'text',
-    content: textContent,
-    date: new Date(),
-    read: false
-  });
-
-  if (!isAdmin) {
-    const unreadCount = await Message.countDocuments({ userId: ctx.from.id, read: false, type: 'text' });
-    await bot.telegram.sendMessage(
-      ADMIN_ID,
-      `📩 Новое сообщение от @${ctx.from.username || 'нет'}\nID: ${ctx.from.id}\nНепрочитанных сообщений: ${unreadCount}\n\n${textContent}`
-    );
+  for (const msg of messages.reverse()) {
+    await ctx.reply(`${msg.type === 'admin' ? '🛠 ' : '👤 '}${msg.content}`);
   }
+
+  // Кнопка закрытия диалога
+  await ctx.reply('Диалог открыт', Markup.keyboard([['❌ Завершить диалог']]).resize());
 });
 
-// Автообновление кнопки "📥 Входящие" без спама
-setInterval(async () => {
-  if (!bot) return;
-  try {
-    const hasUnread = await Message.exists({ read: false, type: 'text' });
-    await bot.telegram.sendMessage(
-      ADMIN_ID,
-      ' ', // пустой текст просто для обновления клавиатуры
-      await getAdminMainKeyboard()
-    );
-  } catch (e) {
-    // Игнорируем ошибки
-  }
-}, 10000);
+// Закрыть диалог
+bot.hears('❌ Завершить диалог', async (ctx) => {
+  if (ctx.from.id.toString() !== ADMIN_ID) return;
+  ctx.session.currentUserId = null;
+  await ctx.reply('Диалог закрыт', getMainKeyboard(true));
+});
 
-// Запуск бота
+// Пользователь пишет сообщение
+bot.on('text', async (ctx) => {
+  const isAdmin = ctx.from.id.toString() === ADMIN_ID;
+  const userId = ctx.from.id;
+
+  if (!isAdmin) {
+    await Message.create({ userId, type: 'text', content: ctx.message.text, date: new Date() });
+    // Уведомление админу
+    await bot.telegram.sendMessage(ADMIN_ID, `📩 Сообщение от @${ctx.from.username || 'нет'} (ID: ${userId})\n${ctx.message.text}`);
+  } else {
+    // Админ отвечает текущему пользователю
+    if (ctx.session.currentUserId) {
+      const targetId = ctx.session.currentUserId;
+      await bot.telegram.sendMessage(targetId, `💬 ${ctx.message.text}`);
+      await Message.create({ userId: targetId, type: 'admin', content: ctx.message.text, date: new Date() });
+    }
+  }
+
+  // Обновляем кнопку входящие
+  if (isAdmin) await updateInboxButton(ctx);
+});
+
 await bot.launch({ dropPendingUpdates: true });
 console.log('✅ Bot started');
