@@ -318,8 +318,27 @@ bot.action(/user_(\d+)/, async (ctx) => {
 });
 
 // ------------------ Завершить диалог ------------------
+// bot.hears('❌ Завершить диалог', async (ctx) => {
+//   ctx.session.currentUserId = null;
+
+//   const buttons = [
+//     ['👤 Профиль', '💰 Баланс'],
+//     ['⚙️ Настройки', 'ℹ️ Помощь']
+//   ];
+//   buttons.push(['📥 Входящие']);
+
+//   await ctx.reply('Выберите действие:', Markup.keyboard(buttons).resize());
+
+//   // Передаём ctx, чтобы клавиатура входящих сохранилась
+//   await updateInboxButton(ctx);
+// });
+
+// ------------------ Завершить диалог ------------------
 bot.hears('❌ Завершить диалог', async (ctx) => {
   ctx.session.currentUserId = null;
+
+  // Удаляем ID предыдущей клавиатуры, чтобы Telegram позволил отправить новую
+  if (ctx.session.inboxMessageId) delete ctx.session.inboxMessageId;
 
   const buttons = [
     ['👤 Профиль', '💰 Баланс'],
@@ -328,9 +347,6 @@ bot.hears('❌ Завершить диалог', async (ctx) => {
   buttons.push(['📥 Входящие']);
 
   await ctx.reply('Выберите действие:', Markup.keyboard(buttons).resize());
-
-  // Передаём ctx, чтобы клавиатура входящих сохранилась
-  await updateInboxButton(ctx);
 });
 
 // ------------------ Основной обработчик сообщений ------------------
