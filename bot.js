@@ -11,158 +11,192 @@
 
 // await connectDB();
 
-// // Подключаем сессию
 // bot.use(session());
 // bot.use((ctx, next) => {
 //   if (!ctx.session) ctx.session = {};
 //   return next();
 // });
 
-// // Функция для генерации основной клавиатуры
+// // 🔹 Основная клавиатура
 // function mainKeyboard(ctx) {
 //   const buttons = [
 //     ['👤 Профиль', '💰 Баланс'],
 //     ['⚙️ Настройки', 'ℹ️ Помощь']
 //   ];
+
 //   if (ctx.from.id.toString() === ADMIN_ID) {
-//     buttons.push(['📊 Статистика', '👥 Пользователи']);
+//     buttons.push(['📊 Статистика', '📥 Входящие']);
 //   }
+
 //   return Markup.keyboard(buttons).resize();
 // }
 
-// // Функция для клавиатуры диалога
+// // 🔹 Клавиатура диалога
 // function dialogKeyboard() {
 //   return Markup.keyboard([['❌ Закрыть диалог']]).resize();
 // }
 
-// async function startBot() {
-//   console.log('🚀 Запуск бота...');
+// // 🔥 Получить пользователей с непрочитанными
+// async function getUsersWithUnread() {
+//   const users = await User.find();
 
-//   // /start
-//   bot.start(async (ctx) => {
-//     let user = await User.findOne({ telegramId: ctx.from.id });
-//     if (!user) {
-//       user = await User.create({
-//         telegramId: ctx.from.id,
-//         username: ctx.from.username
-//       });
-//     }
-//     await ctx.reply('Выберите действие:', mainKeyboard(ctx));
+//   const result = [];
+
+//   for (const user of users) {
+//     const count = await Message.countDocuments({
+//       userId: user.telegramId,
+//       type: 'text',
+//       readByAdmin: false
+//     });
+
+//     result.push({
+//       user,
+//       unread: count
+//     });
+//   }
+
+//   // сортировка — сначала с непрочитанными
+//   return result.sort((a, b) => b.unread - a.unread);
+// }
+
+// // 🔥 Показ входящих сообщений
+// async function showInbox(ctx) {
+//   const users = await getUsersWithUnread();
+
+//   if (!users.length) {
+//     return ctx.reply('Нет пользователей');
+//   }
+
+//   const buttons = users.map(({ user, unread }) => {
+//     const text = `${unread > 0 ? '🔴 ' : ''}${user.username ? '@' + user.username : 'без username'} (${unread})`;
+//     return [Markup.button.callback(text, `user_${user.telegramId}`)];
 //   });
 
-//   // 👤 Профиль
-//   bot.hears('👤 Профиль', async (ctx) => {
-//     const user = await User.findOne({ telegramId: ctx.from.id });
-//     if (!user) return ctx.reply('Нажми /start');
-//     ctx.reply(`
-// 👤 Профиль
-// ID: ${user.telegramId}
-// Username: @${user.username || 'нет'}
-// Premium: ${user.isPremium ? 'Да ⭐' : 'Нет'}
-// `);
-//   });
+//   await ctx.reply('📥 Входящие:', Markup.inlineKeyboard(buttons));
+// }
 
-//   // 💰 Баланс
-//   bot.hears('💰 Баланс', async (ctx) => {
-//     const user = await User.findOne({ telegramId: ctx.from.id });
-//     if (!user) return ctx.reply('Нажми /start');
-//     ctx.reply(`💰 Баланс: ${user.balance} ₽`);
-//   });
+// // 🔹 START
+// bot.start(async (ctx) => {
+//   let user = await User.findOne({ telegramId: ctx.from.id });
+//   if (!user) {
+//     user = await User.create({
+//       telegramId: ctx.from.id,
+//       username: ctx.from.username
+//     });
+//   }
 
-//   // ⚙️ Настройки
-//   bot.hears('⚙️ Настройки', (ctx) => ctx.reply('⚙️ Пока пусто'));
+//   await ctx.reply('Выберите действие:', mainKeyboard(ctx));
+// });
 
-//   // ℹ️ Помощь
-//   bot.hears('ℹ️ Помощь', (ctx) => ctx.reply('ℹ️ Это тестовый бот'));
+// // 📥 Входящие (НОВОЕ)
+// bot.hears('📥 Входящие', async (ctx) => {
+//   if (ctx.from.id.toString() !== ADMIN_ID) return;
+//   await showInbox(ctx);
+// });
 
-//   // 📊 Статистика
+// // 🔥 Открыть диалог
+// bot.action(/user_(\d+)/, async (ctx) => {
+//   if (ctx.from.id.toString() !== ADMIN_ID) return;
+
+//   const userId = ctx.match[1];
+//   ctx.session.currentUserId = userId;
+
+//   await ctx.answerCbQuery();
+//   await ctx.reply(`💬 Диалог с ${userId}`, dialogKeyboard());
+
+//   const messages = await Message.find({ userId }).sort({ date: -1 }).limit(10);
+
+//   for (const msg of messages.reverse()) {
+//     await ctx.reply(`${msg.type === 'admin' ? '🛠 ' : '👤 '}${msg.content}`);
+//   }
+
+//   // отмечаем как прочитанные
+//   await Message.updateMany(
+//     { userId, type: 'text' },
+//     { readByAdmin: true }
+//   );
+// });
+
 //   bot.hears('📊 Статистика', async (ctx) => {
 //     if (ctx.from.id.toString() !== ADMIN_ID) return;
 //     const count = await User.countDocuments();
 //     ctx.reply(`📊 Пользователей: ${count}`);
 //   });
 
-//   // 👥 Пользователи
-//   bot.hears('👥 Пользователи', async (ctx) => {
-//     if (ctx.from.id.toString() !== ADMIN_ID) return;
-//     const users = await User.find().limit(20);
+//   //   // 👤 Профиль
+// //   bot.hears('👤 Профиль', async (ctx) => {
+// //     const user = await User.findOne({ telegramId: ctx.from.id });
+// //     if (!user) return ctx.reply('Нажми /start');
+// //     ctx.reply(`
+// // 👤 Профиль
+// // ID: ${user.telegramId}
+// // Username: @${user.username || 'нет'}
+// // Premium: ${user.isPremium ? 'Да ⭐' : 'Нет'}
+// // `);
+// //   });
 
-//     const buttons = users.map(u => [
-//       Markup.button.callback(
-//         `${u.username ? '@' + u.username : 'без username'} | ${u.telegramId}`,
-//         `user_${u.telegramId}`
-//       )
-//     ]);
-//     await ctx.reply('👥 Пользователи:', Markup.inlineKeyboard(buttons));
-//   });
 
-//   // Открыть диалог
-//   bot.action(/user_(\d+)/, async (ctx) => {
-//     if (ctx.from.id.toString() !== ADMIN_ID) return;
 
-//     const userId = ctx.match[1];
-//     ctx.session.currentUserId = userId;
-//     await ctx.answerCbQuery();
-//     await ctx.reply(`💬 Открыт диалог с ID: ${userId}`, dialogKeyboard());
+// // ❌ Закрыть диалог
+// bot.hears('❌ Закрыть диалог', async (ctx) => {
+//   ctx.session.currentUserId = null;
+//   await ctx.reply('Диалог закрыт', mainKeyboard(ctx));
 
-//     const messages = await Message.find({ userId }).sort({ date: -1 }).limit(10);
-//     for (const msg of messages.reverse()) {
-//       await ctx.reply(`${msg.type === 'admin' ? '🛠 ' : '👤 '}${msg.content}`);
-//     }
-//   });
+//   // 🔥 сразу показываем входящие
+//   if (ctx.from.id.toString() === ADMIN_ID) {
+//     await showInbox(ctx);
+//   }
+// });
 
-//   // ❌ Закрыть диалог
-//   bot.hears('❌ Закрыть диалог', (ctx) => {
-//     ctx.session.currentUserId = null;
-//     ctx.reply('Диалог закрыт', mainKeyboard(ctx));
-//   });
+// // 🔥 Основной обработчик
+// bot.on('text', async (ctx) => {
+//   const isAdmin = ctx.from.id.toString() === ADMIN_ID;
 
-//   // Основной обработчик сообщений
-//   bot.on('text', async (ctx) => {
-//     const isAdmin = ctx.from.id.toString() === ADMIN_ID;
+//   // админ отвечает
+//   if (isAdmin && ctx.session.currentUserId) {
+//     const targetId = ctx.session.currentUserId;
 
-//     // Админ отвечает пользователю
-//     if (isAdmin && ctx.session.currentUserId) {
-//       const targetId = ctx.session.currentUserId;
-//       await bot.telegram.sendMessage(targetId, `💬 ${ctx.message.text}`);
-//       await Message.create({
-//         userId: targetId,
-//         type: 'admin',
-//         content: ctx.message.text,
-//         date: new Date()
-//       });
-//       return;
-//     }
-
-//     // Пользователь пишет
-//     const user = await User.findOne({ telegramId: ctx.from.id });
-//     if (!user) return;
+//     await bot.telegram.sendMessage(targetId, `💬 ${ctx.message.text}`);
 
 //     await Message.create({
-//       userId: ctx.from.id,
-//       type: 'text',
-//       content: ctx.message.text || '',
+//       userId: targetId,
+//       type: 'admin',
+//       content: ctx.message.text,
 //       date: new Date()
 //     });
 
-//     if (!isAdmin) {
-//       await bot.telegram.sendMessage(
-//         ADMIN_ID,
-//         `📩 Сообщение от @${ctx.from.username || 'нет'}\nID: ${ctx.from.id}\n\n${ctx.message.text || ''}`
-//       );
-//     }
+//     return;
+//   }
 
-//     // Автоматическое восстановление клавиатуры для пользователя
-//     if (!isAdmin) {
-//       await ctx.reply('Выберите действие:', mainKeyboard(ctx));
-//     }
+//   // пользователь пишет
+//   const user = await User.findOne({ telegramId: ctx.from.id });
+//   if (!user) return;
+
+//   await Message.create({
+//     userId: ctx.from.id,
+//     type: 'text',
+//     content: ctx.message.text,
+//     date: new Date(),
+//     readByAdmin: false
 //   });
 
-//   await bot.launch({ dropPendingUpdates: true });
-//   console.log('✅ Bot started');
-// }
+//   // 🔥 уведомление админу
+//   if (!isAdmin) {
+//     const count = await Message.countDocuments({
+//       userId: ctx.from.id,
+//       readByAdmin: false
+//     });
 
-// startBot();
+//     await bot.telegram.sendMessage(
+//       ADMIN_ID,
+//       `📩 @${ctx.from.username || 'нет'} (${ctx.from.id})\nНовых: ${count}\n\n${ctx.message.text}`
+//     );
+//   }
+// });
+
+// // запуск
+// bot.launch();
+// console.log('✅ Bot started');
 
 import 'dotenv/config';
 import { Telegraf, Markup, session } from 'telegraf';
@@ -177,13 +211,18 @@ const bot = new Telegraf(BOT_TOKEN);
 
 await connectDB();
 
+// 🔥 глобальные переменные
+let inboxMessageId = null;
+let lastActiveChat = null;
+
+// session
 bot.use(session());
 bot.use((ctx, next) => {
   if (!ctx.session) ctx.session = {};
   return next();
 });
 
-// 🔹 Основная клавиатура
+// 🔹 клавиатуры
 function mainKeyboard(ctx) {
   const buttons = [
     ['👤 Профиль', '💰 Баланс'],
@@ -197,53 +236,78 @@ function mainKeyboard(ctx) {
   return Markup.keyboard(buttons).resize();
 }
 
-// 🔹 Клавиатура диалога
 function dialogKeyboard() {
   return Markup.keyboard([['❌ Закрыть диалог']]).resize();
 }
 
-// 🔥 Получить пользователей с непрочитанными
+// 🔥 получить пользователей с unread
 async function getUsersWithUnread() {
   const users = await User.find();
-
   const result = [];
 
   for (const user of users) {
-    const count = await Message.countDocuments({
+    const unread = await Message.countDocuments({
       userId: user.telegramId,
       type: 'text',
       readByAdmin: false
     });
 
-    result.push({
-      user,
-      unread: count
-    });
+    result.push({ user, unread });
   }
 
-  // сортировка — сначала с непрочитанными
   return result.sort((a, b) => b.unread - a.unread);
 }
 
-// 🔥 Показ входящих сообщений
-async function showInbox(ctx) {
+// 🔥 inbox (real-time)
+async function showInbox() {
   const users = await getUsersWithUnread();
 
-  if (!users.length) {
-    return ctx.reply('Нет пользователей');
-  }
+  if (!users.length) return;
 
   const buttons = users.map(({ user, unread }) => {
-    const text = `${unread > 0 ? '🔴 ' : ''}${user.username ? '@' + user.username : 'без username'} (${unread})`;
+    const status = unread > 0 ? '🔴' : '⚪';
+    const text = `${status} ${user.username ? '@' + user.username : 'ID:' + user.telegramId} (${unread})`;
+
     return [Markup.button.callback(text, `user_${user.telegramId}`)];
   });
 
-  await ctx.reply('📥 Входящие:', Markup.inlineKeyboard(buttons));
+  const text = '📥 Входящие (нажми для ответа):';
+
+  try {
+    if (inboxMessageId) {
+      await bot.telegram.editMessageText(
+        ADMIN_ID,
+        inboxMessageId,
+        null,
+        text,
+        Markup.inlineKeyboard(buttons)
+      );
+    } else {
+      const msg = await bot.telegram.sendMessage(
+        ADMIN_ID,
+        text,
+        Markup.inlineKeyboard(buttons)
+      );
+
+      inboxMessageId = msg.message_id;
+
+      // 📌 закрепляем
+      await bot.telegram.pinChatMessage(ADMIN_ID, inboxMessageId);
+    }
+  } catch (e) {
+    const msg = await bot.telegram.sendMessage(
+      ADMIN_ID,
+      text,
+      Markup.inlineKeyboard(buttons)
+    );
+    inboxMessageId = msg.message_id;
+  }
 }
 
-// 🔹 START
+// 🚀 START
 bot.start(async (ctx) => {
   let user = await User.findOne({ telegramId: ctx.from.id });
+
   if (!user) {
     user = await User.create({
       telegramId: ctx.from.id,
@@ -254,54 +318,89 @@ bot.start(async (ctx) => {
   await ctx.reply('Выберите действие:', mainKeyboard(ctx));
 });
 
-// 📥 Входящие (НОВОЕ)
+// 📥 открыть inbox
 bot.hears('📥 Входящие', async (ctx) => {
   if (ctx.from.id.toString() !== ADMIN_ID) return;
-  await showInbox(ctx);
+  await showInbox();
 });
 
-// 🔥 Открыть диалог
+// 💬 открыть диалог
 bot.action(/user_(\d+)/, async (ctx) => {
   if (ctx.from.id.toString() !== ADMIN_ID) return;
 
   const userId = ctx.match[1];
   ctx.session.currentUserId = userId;
+  lastActiveChat = userId;
 
   await ctx.answerCbQuery();
   await ctx.reply(`💬 Диалог с ${userId}`, dialogKeyboard());
 
-  const messages = await Message.find({ userId }).sort({ date: -1 }).limit(10);
+  const messages = await Message.find({ userId })
+    .sort({ date: -1 })
+    .limit(10);
 
   for (const msg of messages.reverse()) {
     await ctx.reply(`${msg.type === 'admin' ? '🛠 ' : '👤 '}${msg.content}`);
   }
 
-  // отмечаем как прочитанные
+  // ✅ прочитано
   await Message.updateMany(
     { userId, type: 'text' },
     { readByAdmin: true }
   );
+
+  await showInbox();
 });
 
-  bot.hears('📊 Статистика', async (ctx) => {
-    if (ctx.from.id.toString() !== ADMIN_ID) return;
-    const count = await User.countDocuments();
-    ctx.reply(`📊 Пользователей: ${count}`);
-  });
-
-
-// ❌ Закрыть диалог
+// ❌ закрыть диалог
 bot.hears('❌ Закрыть диалог', async (ctx) => {
   ctx.session.currentUserId = null;
-  await ctx.reply('Диалог закрыт', mainKeyboard(ctx));
 
-  // 🔥 сразу показываем входящие
-  if (ctx.from.id.toString() === ADMIN_ID) {
-    await showInbox(ctx);
-  }
+  await ctx.reply('Диалог закрыт', mainKeyboard(ctx));
+  await showInbox();
 });
 
-// 🔥 Основной обработчик
+// ⚡ быстрый возврат
+bot.command('last', async (ctx) => {
+  if (ctx.from.id.toString() !== ADMIN_ID) return;
+
+  if (!lastActiveChat) {
+    return ctx.reply('Нет активного диалога');
+  }
+
+  ctx.session.currentUserId = lastActiveChat;
+  ctx.reply(`💬 Возврат к ${lastActiveChat}`, dialogKeyboard());
+});
+
+// 📊 статистика
+bot.hears('📊 Статистика', async (ctx) => {
+  if (ctx.from.id.toString() !== ADMIN_ID) return;
+
+  const count = await User.countDocuments();
+  ctx.reply(`📊 Пользователей: ${count}`);
+});
+
+// 👤 профиль
+bot.hears('👤 Профиль', async (ctx) => {
+  const user = await User.findOne({ telegramId: ctx.from.id });
+  if (!user) return ctx.reply('Нажми /start');
+
+  ctx.reply(`
+👤 Профиль
+ID: ${user.telegramId}
+Username: @${user.username || 'нет'}
+`);
+});
+
+// 💰 баланс
+bot.hears('💰 Баланс', async (ctx) => {
+  const user = await User.findOne({ telegramId: ctx.from.id });
+  if (!user) return ctx.reply('Нажми /start');
+
+  ctx.reply(`💰 Баланс: ${user.balance || 0} ₽`);
+});
+
+// 🔥 основной обработчик
 bot.on('text', async (ctx) => {
   const isAdmin = ctx.from.id.toString() === ADMIN_ID;
 
@@ -333,20 +432,27 @@ bot.on('text', async (ctx) => {
     readByAdmin: false
   });
 
-  // 🔥 уведомление админу
+  // 🔔 уведомление админу
   if (!isAdmin) {
-    const count = await Message.countDocuments({
+    const unread = await Message.countDocuments({
       userId: ctx.from.id,
       readByAdmin: false
     });
 
     await bot.telegram.sendMessage(
       ADMIN_ID,
-      `📩 @${ctx.from.username || 'нет'} (${ctx.from.id})\nНовых: ${count}\n\n${ctx.message.text}`
+      `🔔 Новое сообщение\n@${ctx.from.username || 'нет'} (${ctx.from.id})\nНовых: ${unread}\n\n${ctx.message.text}`
     );
+
+    await showInbox();
+  }
+
+  // вернуть клавиатуру пользователю
+  if (!isAdmin) {
+    await ctx.reply('Выберите действие:', mainKeyboard(ctx));
   }
 });
 
-// запуск
-bot.launch();
+// 🚀 запуск
+await bot.launch({ dropPendingUpdates: true });
 console.log('✅ Bot started');
