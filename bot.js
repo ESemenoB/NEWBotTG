@@ -328,7 +328,7 @@ bot.hears('❌ Завершить диалог', async (ctx) => {
     ['👤 Профиль', '💰 Баланс'],
     ['⚙️ Настройки', 'ℹ️ Помощь']
   ];
-  buttons.push(['📥 Входящие']);
+  // buttons.push(['📥 Входящие']);
 
   await ctx.reply('Выберите действие:', Markup.keyboard(buttons).resize());
   await updateInboxButton(ctx);
