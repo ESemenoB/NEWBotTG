@@ -219,7 +219,6 @@ async function updateInboxButton(ctx) {
 
   try {
     if (ctx?.session?.inboxMessageId) {
-      // Пытаемся обновить клавиатуру
       await bot.telegram.editMessageReplyMarkup(
         chatId,
         ctx.session.inboxMessageId,
@@ -227,16 +226,14 @@ async function updateInboxButton(ctx) {
         newMarkup
       );
     } else {
-      // Если ещё нет сообщения — отправляем новое
       const sent = await bot.telegram.sendMessage(
         chatId,
         '📥 Входящие\n(нажми на пользователя)',
         newMarkup
       );
-      ctx.session.inboxMessageId = sent.message_id;
+      if (ctx?.session) ctx.session.inboxMessageId = sent.message_id;
     }
   } catch (err) {
-    // Игнорируем "message is not modified"
     if (!/message is not modified/.test(err.description)) {
       console.log('updateInboxButton error:', err.description || err.message);
     }
@@ -331,6 +328,8 @@ bot.hears('❌ Завершить диалог', async (ctx) => {
   buttons.push(['📥 Входящие']);
 
   await ctx.reply('Выберите действие:', Markup.keyboard(buttons).resize());
+
+  // Передаём ctx, чтобы клавиатура входящих сохранилась
   await updateInboxButton(ctx);
 });
 
